@@ -64,10 +64,10 @@ var lineChart = function() {
 
   svg.append("defs").append("marker")
     .attr("id", "marker-circle")
-    .attr("markerWidth", "3").attr("markerHeight", "3")
-    .attr("refX", "1.5").attr("refY", "1.5")
+    .attr("markerWidth", "2").attr("markerHeight", "2")
+    .attr("refX", "1").attr("refY", "1")
     .append("circle")
-    .attr("cx", "1.5").attr("cy", "1.5").attr("r", "1.5")
+    .attr("cx", "1").attr("cy", "1").attr("r", "0.75")
     .attr("class", "marker");
 
   // setup svg frame of reference
