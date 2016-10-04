@@ -1,3 +1,4 @@
+// vi:syntax=javascript
 package main
 
 import (
@@ -53,6 +54,34 @@ var setupWS = function(msgCallback) {
   }
 };
 
+var tmParsers = {
+	"%m%d %H:%M:%S"     :  d3.timeParse("%m%d %H:%M:%S"),
+	"%Y%m%d %H:%M:%S"   :  d3.timeParse("%Y%m%d %H:%M:%S"),
+	"%Y/%m/%d %H:%M:%S" :  d3.timeParse("%Y/%m/%d %H:%M:%S"),
+	"%Y-%m-%d %H:%M:%S" :  d3.timeParse("%Y-%m-%d %H:%M:%S"),
+	"%Y-%m-%d"          :  d3.timeParse("%Y-%m-%d"),
+	"%Y/%m/%d"          :  d3.timeParse("%Y/%m/%d"),
+	"%B %d, %Y"         :  d3.timeParse("%B %d, %Y"),
+};
+
+// assumes data looks like
+// [[x0, y0], [x1, y1], ...]
+var detectAxis = function(data, axis) {
+	var freq = {};
+	data.forEach(function(point) {
+		Object.keys(tmParsers).forEach(function(fmt) {
+			if (tmParsers[fmt](point[axis]) !== null) {
+				freq[fmt] += 1;
+			}
+		});
+	});
+	if (Object.keys(freq).length != 0) {
+		return Object.keys(freq).reduce(function(a, b) {
+			return freq[a] > freq[b] ? a : b;
+		});
+	}
+	return null;
+};
 
 var lineChart = function() {
   var svg = d3.select("#svgcanvas"),
@@ -74,14 +103,16 @@ var lineChart = function() {
   var frame = svg.append("g")
       .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
   // line setup
-  var line = d3.line()
+  var line = function(xparser) {
+			return d3.line()
       .curve(d3.curveMonotoneX)
-      .x(function(d) { return x(+d[0]); })
+      .x(function(d) { return x(xparser(d)); })
       .y(function(d) { return y(+d[1]); });
+	};
   // setup initial axes
-  var updateAxes = function(data) {
+  var updateAxes = function(data, xparser) {
     frame.selectAll("g.axis").remove();
-    x.domain(d3.extent(data, function(d) { return +d[0]; }));
+    x.domain(d3.extent(data, xparser));
     y.domain(d3.extent(data, function(d) { return +d[1]; }));
     frame.append("g")
         .attr("class", "y axis")
@@ -91,16 +122,24 @@ var lineChart = function() {
         .attr("transform", "translate(0," + height + ")")
         .call(d3.axisBottom(x));
   };
-  updateAxes([[0, 0], [10, 10]]);
+  updateAxes([[0, 0], [10, 10]], function(d){return +d[0]});
   // plotter function to call on new data
   var plotter = function(data) {
-    updateAxes(data);
+		var xfmt = detectAxis(data, 0);
+		var xparser = function(d) { return +d[0]; };
+		x = d3.scaleLinear().range([0, width]);
+		if (xfmt !== null) {
+			x = d3.scaleTime().range([0, width]);
+			xparser = function(d) { return tmParsers[xfmt](d[0]); };
+		}
+
+    updateAxes(data, xparser);
     // https://github.com/d3/d3-selection#joining-data
     frame.selectAll("path.dataline").remove();
     frame.append("path")
       .datum(data)
       .attr("class", "line dataline")
-      .attr("d", line);
+      .attr("d", line(xparser));
   };
   return plotter;
 };
