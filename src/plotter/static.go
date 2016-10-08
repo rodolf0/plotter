@@ -29,7 +29,13 @@ var GraphHtml = template.Must(template.New("").Parse(`
 	</head>
 	<body>
 		<h2 id="workspace">Workspace</h2>
-		<svg id="svgcanvas" width="960" height="500"></svg>
+		<svg id="svgcanvas" width="960" height="500">
+			<defs>
+			<marker id="marker-circle" markerWidth="2" markerHeight="2" refX="1" refY="1">
+				<circle cx="1" cy="1" r="0.75"/>
+			</marker>
+			</defs>
+		</svg>
 		<script>
 
 var setupWS = function(msgCallback) {
@@ -57,92 +63,90 @@ var setupWS = function(msgCallback) {
 	}
 };
 
-var tmParsers = {
-	"%m%d %H:%M:%S"			:  d3.timeParse("%m%d %H:%M:%S"),
-	"%Y%m%d %H:%M:%S"		:  d3.timeParse("%Y%m%d %H:%M:%S"),
-	"%Y/%m/%d %H:%M:%S" :  d3.timeParse("%Y/%m/%d %H:%M:%S"),
-	"%Y-%m-%d %H:%M:%S" :  d3.timeParse("%Y-%m-%d %H:%M:%S"),
-	"%Y-%m-%d"					:  d3.timeParse("%Y-%m-%d"),
-	"%Y/%m/%d"					:  d3.timeParse("%Y/%m/%d"),
-	"%B %d, %Y"					:  d3.timeParse("%B %d, %Y"),
-};
-
-// assumes data looks like
-// [[x0, y0], [x1, y1], ...]
-var detectAxis = function(data, axis) {
+// Figure out the function to parse each component of a data point
+// assumes data looks like [x0, x1, x2, ...]
+var inferScaleDomain = function(data) {
+	var tmParsers = {
+		"%m%d %H:%M:%S"			: d3.timeParse("%m%d %H:%M:%S"),
+		"%Y%m%d %H:%M:%S"		: d3.timeParse("%Y%m%d %H:%M:%S"),
+		"%Y/%m/%d %H:%M:%S" : d3.timeParse("%Y/%m/%d %H:%M:%S"),
+		"%Y-%m-%d %H:%M:%S" : d3.timeParse("%Y-%m-%d %H:%M:%S"),
+		"%Y-%m-%d"					: d3.timeParse("%Y-%m-%d"),
+		"%Y/%m/%d"					: d3.timeParse("%Y/%m/%d"),
+		"%B %d, %Y"					: d3.timeParse("%B %d, %Y"),
+	};
 	var freq = {};
-	data.forEach(function(point) {
+	data.forEach(function(p) {
 		Object.keys(tmParsers).forEach(function(fmt) {
-			if (tmParsers[fmt](point[axis]) !== null) {
-				freq[fmt] += 1;
-			}
+			var v = tmParsers[fmt](p);
+			if (v !== null) { freq[fmt] += 1; }
 		});
 	});
-	if (Object.keys(freq).length != 0) {
-		return Object.keys(freq).reduce(function(a, b) {
-			return freq[a] > freq[b] ? a : b;
-		});
+	if (Object.keys(freq).length == 0) {
+		return {
+			parser: function(p) {return +p;},
+			scale: d3.scaleLinear,
+		};
 	}
-	return null;
+	var fmt = Object.keys(freq).reduce(function(a, b) {
+		return freq[a] > freq[b] ? a : b;
+	});
+	return {
+		parser: tmParsers[fmt],
+		scale: d3.scaleTime,
+	};
 };
 
-var lineChart = function() {
-	var svg = d3.select("#svgcanvas"),
-			margin = {top: 20, right: 80, bottom: 30, left: 50},
-			width = svg.attr("width") - margin.left - margin.right,
-			height = svg.attr("height") - margin.top - margin.bottom;
-	var x = d3.scaleLinear().range([0, width]),
-			y = d3.scaleLinear().range([height, 0]);
-
-	svg.append("defs").append("marker")
-		.attr("id", "marker-circle")
-		.attr("markerWidth", "2").attr("markerHeight", "2")
-		.attr("refX", "1").attr("refY", "1")
-		.append("circle")
-		.attr("cx", "1").attr("cy", "1").attr("r", "0.75")
-		.attr("class", "marker");
-
-	// setup svg frame of reference
-	var frame = svg.append("g")
-			.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-	// line setup
-	var line = function(xparser) {
+var lineChart = function(config, scale) {
+	var margin = {t: 20, r: 80, b: 30, l: 50},
+			svg = d3.select("#svgcanvas"),
+			width = svg.attr("width") - margin.l - margin.r,
+			height = svg.attr("height") - margin.t - margin.b,
+			frame = svg.append("g")
+				.attr("transform", "translate(" + margin.l + "," + margin.t + ")");
+	// generate SVG path, dataXform maps data points to target domain
+	var line = function(dataXform) {
 			return d3.line()
 			.curve(d3.curveMonotoneX)
-			.x(function(d) { return x(xparser(d)); })
-			.y(function(d) { return y(+d[1]); });
+			.x(dataXform.x)
+			.y(dataXform.y)
 	};
-	// setup initial axes
-	var updateAxes = function(data, xparser) {
+	// use data to reset axes
+	var updateAxes = function(scale) {
 		frame.selectAll("g.axis").remove();
-		x.domain(d3.extent(data, xparser));
-		y.domain(d3.extent(data, function(d) { return +d[1]; }));
 		frame.append("g")
 				.attr("class", "y axis")
-				.call(d3.axisLeft(y).tickSizeInner(-width).tickSizeOuter(0));
+				.call(d3.axisLeft(scale.y)
+				.tickSizeInner(-width)
+				.tickSizeOuter(0));
 		frame.append("g")
 				.attr("class", "x axis")
 				.attr("transform", "translate(0," + height + ")")
-				.call(d3.axisBottom(x));
+				.call(d3.axisBottom(scale.x));
 	};
-	updateAxes([[0, 0], [10, 10]], function(d){return +d[0]});
-	// plotter function to call on new data
+	// function to call on data updates
+	// data looks like [[x0, y0], [x1, y1], ...]
 	var plotter = function(data) {
-		var xfmt = detectAxis(data, 0);
-		var xparser = function(d) { return +d[0]; };
-		x = d3.scaleLinear().range([0, width]);
-		if (xfmt !== null) {
-			x = d3.scaleTime().range([0, width]);
-			xparser = function(d) { return tmParsers[xfmt](d[0]); };
-		}
-
-		updateAxes(data, xparser);
-		// https://github.com/d3/d3-selection#joining-data
+		var dataX = data.map(function(p){return p[0];});
+		var domainX = inferScaleDomain(dataX);
+		var extents = {
+			x: d3.extent(data, function(p) {return domainX.parser(p[0]);}),
+			y: d3.extent(data, function(p) {return +p[1];}),
+		};
+		var scale = {
+			x: domainX.scale().range([0, width]).domain(extents.x),
+			y: d3.scaleLinear().range([height, 0]).domain(extents.y),
+		};
+		var xform = {
+			x: function(d) {return scale.x(domainX.parser(d[0]));},
+			y: function(d) {return scale.y(+d[1]);},
+		};
+		updateAxes(scale);
 		frame.selectAll("path.dataline").remove();
 		frame.append("path")
 			.datum(data)
 			.attr("class", "line dataline")
-			.attr("d", line(xparser));
+			.attr("d", line(xform));
 	};
 	return plotter;
 };
