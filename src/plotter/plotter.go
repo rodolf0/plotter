@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
@@ -52,7 +53,6 @@ func (p *PublishCtx) Close(id int32) {
 		delete(p.c, id)
 	}
 }
-
 
 var PC *PublishCtx
 var Upgrader = websocket.Upgrader{
@@ -137,9 +137,12 @@ func wshandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	httpport := flag.String("port", "7272", "HTTP port to listen on")
+	flag.Parse()
 	PC = &PublishCtx{c: make(map[int32]chan Data)}
 	http.HandleFunc("/", viewer)
 	http.HandleFunc("/ws", wshandler)
 	http.HandleFunc("/plot", plotter)
-	log.Fatal(http.ListenAndServe(":7272", nil))
+	log.Printf("Open a browser tab at http://localhost:%v", *httpport)
+	log.Fatal(http.ListenAndServe(":"+*httpport, nil))
 }
