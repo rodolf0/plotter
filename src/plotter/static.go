@@ -16,7 +16,6 @@ var GraphHtml = template.Must(template.New("").Parse(`
 		<style>
 		.line {
 			fill: none;
-			stroke: steelblue;
 			stroke-width: 1.5px;
 			marker-mid: url(#marker-circle);
 			marker-end: url(#marker-circle);
@@ -32,7 +31,7 @@ var GraphHtml = template.Must(template.New("").Parse(`
 		<svg id="svgcanvas" width="960" height="500">
 			<defs>
 			<marker id="marker-circle" markerWidth="2" markerHeight="2" refX="1" refY="1">
-				<circle cx="1" cy="1" r="0.75"/>
+				<circle cx="1" cy="1" r="0.75" opacity="0.4"/>
 			</marker>
 			</defs>
 		</svg>
@@ -97,6 +96,11 @@ var inferScaleDomain = function(data) {
 	};
 };
 
+var colorWheel = function(i) {
+	var colors = ["steelblue", "firebrick", "goldenrod", "limegreen", "coral"];
+	return colors[i%colors.length];
+};
+
 var lineChart = function(config, scale) {
 	var margin = {t: 20, r: 80, b: 30, l: 50},
 			svg = d3.select("#svgcanvas"),
@@ -137,16 +141,21 @@ var lineChart = function(config, scale) {
 			x: domainX.scale().range([0, width]).domain(extents.x),
 			y: d3.scaleLinear().range([height, 0]).domain(extents.y),
 		};
-		var xform = {
-			x: function(d) {return scale.x(domainX.parser(d[0]));},
-			y: function(d) {return scale.y(+d[1]);},
+		var xform = function(y) {
+			return {
+				x: function(d) {return scale.x(domainX.parser(d[0]));},
+				y: function(d) {return scale.y(+d[y]);},
+			}
 		};
 		updateAxes(scale);
 		frame.selectAll("path.dataline").remove();
-		frame.append("path")
-			.datum(data)
-			.attr("class", "line dataline")
-			.attr("d", line(xform));
+		for (var y = 1; y < data[0].length; y++) {
+			frame.append("path")
+				.datum(data)
+				.attr("class", "line dataline")
+				.attr("stroke", colorWheel(y-1))
+				.attr("d", line(xform(y)));
+		}
 	};
 	return plotter;
 };
