@@ -40,31 +40,6 @@ var GraphHtml = template.Must(template.New("").Parse(`
 		</svg>
 		<script>
 
-var setupWS = function(msgCallback) {
-	// setup polling for new data to the server
-	var ws = new WebSocket("{{.Wsaddr}}");
-	ws.onerror = function(errevent) {
-		var t = $('#workspace').html();
-		$('#workspace').html(t + " - ERROR");
-		console.log('Websocket error: ' + errevent);
-	};
-	ws.onclose = function(ev) {
-		ws = null;
-		var t = $('#workspace').html();
-		$('#workspace').html(t + " - LOST");
-		console.log('Websocket closed');
-	};
-	ws.onmessage = function(ev) {
-		var data = JSON.parse(ev.data);
-		// set workspace title
-		if ("workspace" in data) {
-			$('#workspace').html(data["workspace"]);
-			return;
-		}
-		msgCallback(data.Cells);
-	}
-};
-
 // Figure out the function to parse each component of a data point
 // assumes data looks like [x0, x1, x2, ...]
 var inferScaleDomain = function(data) {
@@ -110,6 +85,7 @@ var lineChart = function() {
 			width = svg.attr("width") - margin.l - margin.r,
 			height = svg.attr("height") - margin.t - margin.b,
 			frame = svg.append("g")
+				.attr("class", "canvas-wipe")
 				.attr("transform", "translate(" + margin.l + "," + margin.t + ")");
 	// use data to reset axes
 	var updateAxes = function(scale) {
@@ -169,6 +145,7 @@ var histChart = function() {
 			width = svg.attr("width") - margin.l - margin.r,
 			height = svg.attr("height") - margin.t - margin.b,
 			frame = svg.append("g")
+				.attr("class", "canvas-wipe")
 				.attr("transform", "translate(" + margin.l + "," + margin.t + ")");
 	// use data to reset axes
 	var updateAxes = function(scale) {
@@ -203,7 +180,7 @@ var histChart = function() {
 		var h = frame.selectAll(".bar").data(d3.entries(hist));
 		h.exit().remove();
 		h.enter().append("rect")
-				.attr("class", "bar")
+				.attr("class", "bar ")
 			.merge(h)
 				.attr("x", function(d){return scale.x(d.key);})
 				.attr("y", function(d){return scale.y(d.value);})
@@ -213,9 +190,46 @@ var histChart = function() {
 	return plotter;
 };
 
+var setupWS = function(dataPlotter) {
+	// setup polling for new data to the server
+	var ws = new WebSocket("{{.Wsaddr}}");
+	ws.onerror = function(errevent) {
+		var t = $('#workspace').html();
+		$('#workspace').html(t + " - ERROR");
+		console.log('Websocket error: ' + errevent);
+	};
+	ws.onclose = function(ev) {
+		ws = null;
+		var t = $('#workspace').html();
+		$('#workspace').html(t + " - LOST");
+		console.log('Websocket closed');
+	};
+	ws.onmessage = function(ev) {
+		var data = JSON.parse(ev.data);
+		// set workspace title
+		if ("workspace" in data) {
+			$('#workspace').html(data["workspace"]);
+			return;
+		}
+		dataPlotter(data);
+	}
+};
+
 $(function() {
-	var plotter = histChart();
-	setupWS(plotter);
+	var flexPlotter = function(data) {
+		d3.selectAll(".canvas-wipe").remove();
+		if (data.Graph === "histChart") {
+			histChart()(data.Cells);
+		} else if (data.Graph === "lineChart") {
+			lineChart()(data.Cells);
+		} else if (data.Cells.length > 0) {
+			var plotter = (data.Cells[0].length > 1 ? lineChart() : histChart());
+			plotter(data.Cells);
+		} else {
+			console.log("Can't find plotter for this data");
+		}
+	};
+	setupWS(flexPlotter);
 });
 
 		</script>

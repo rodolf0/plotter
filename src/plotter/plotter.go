@@ -13,6 +13,7 @@ import (
 )
 
 type Data struct {
+	Graph string
 	Cells [][]string
 }
 
@@ -79,7 +80,11 @@ func plotter(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "400 Bad Request", http.StatusBadRequest)
 		return
 	}
-	pubchan <- Data{Cells: cells}
+	if graph, ok := r.Header[http.CanonicalHeaderKey("Graph")]; ok {
+		pubchan <- Data{Graph: graph[0], Cells: cells}
+	} else {
+		pubchan <- Data{Graph: "", Cells: cells}
+	}
 }
 
 func viewer(w http.ResponseWriter, r *http.Request) {
