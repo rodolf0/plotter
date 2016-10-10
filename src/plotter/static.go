@@ -24,6 +24,9 @@ var GraphHtml = template.Must(template.New("").Parse(`
 		.tick line{
 			opacity: 0.1;
 		}
+		.bar {
+			fill: steelblue;
+		}
 		</style>
 	</head>
 	<body>
@@ -78,7 +81,7 @@ var inferScaleDomain = function(data) {
 	data.forEach(function(p) {
 		Object.keys(tmParsers).forEach(function(fmt) {
 			var v = tmParsers[fmt](p);
-			if (v !== null) { freq[fmt] += 1; }
+			if (v !== null) { freq[fmt] = (freq[fmt] || 0) + 1; }
 		});
 	});
 	if (Object.keys(freq).length == 0) {
@@ -101,20 +104,13 @@ var colorWheel = function(i) {
 	return colors[i%colors.length];
 };
 
-var lineChart = function(config, scale) {
+var lineChart = function() {
 	var margin = {t: 20, r: 80, b: 30, l: 50},
 			svg = d3.select("#svgcanvas"),
 			width = svg.attr("width") - margin.l - margin.r,
 			height = svg.attr("height") - margin.t - margin.b,
 			frame = svg.append("g")
 				.attr("transform", "translate(" + margin.l + "," + margin.t + ")");
-	// generate SVG path, dataXform maps data points to target domain
-	var line = function(dataXform) {
-			return d3.line()
-			.curve(d3.curveMonotoneX)
-			.x(dataXform.x)
-			.y(dataXform.y)
-	};
 	// use data to reset axes
 	var updateAxes = function(scale) {
 		frame.selectAll("g.axis").remove();
@@ -127,6 +123,13 @@ var lineChart = function(config, scale) {
 				.attr("class", "x axis")
 				.attr("transform", "translate(0," + height + ")")
 				.call(d3.axisBottom(scale.x));
+	};
+	// generate SVG path, dataXform maps data points to target domain
+	var line = function(dataXform) {
+			return d3.line()
+			.curve(d3.curveMonotoneX)
+			.x(dataXform.x)
+			.y(dataXform.y)
 	};
 	// function to call on data updates
 	// data looks like [[x0, y0], [x1, y1], ...]
@@ -148,11 +151,11 @@ var lineChart = function(config, scale) {
 			}
 		};
 		updateAxes(scale);
-		frame.selectAll("path.dataline").remove();
+		frame.selectAll(".tmp-element").remove();
 		for (var y = 1; y < data[0].length; y++) {
 			frame.append("path")
 				.datum(data)
-				.attr("class", "line dataline")
+				.attr("class", "line tmp-element")
 				.attr("stroke", colorWheel(y-1))
 				.attr("d", line(xform(y)));
 		}
@@ -160,8 +163,58 @@ var lineChart = function(config, scale) {
 	return plotter;
 };
 
+var histChart = function() {
+	var margin = {t: 20, r: 80, b: 30, l: 50},
+			svg = d3.select("#svgcanvas"),
+			width = svg.attr("width") - margin.l - margin.r,
+			height = svg.attr("height") - margin.t - margin.b,
+			frame = svg.append("g")
+				.attr("transform", "translate(" + margin.l + "," + margin.t + ")");
+	// use data to reset axes
+	var updateAxes = function(scale) {
+		frame.selectAll("g.axis").remove();
+		frame.append("g")
+				.attr("class", "y axis")
+				.call(d3.axisLeft(scale.y)
+				.tickSizeInner(-width)
+				.tickSizeOuter(0));
+		frame.append("g")
+				.attr("class", "x axis")
+				.attr("transform", "translate(0," + height + ")")
+				.call(d3.axisBottom(scale.x));
+	};
+	// function to call on data updates
+	// data looks like [[x0, y0], [x1, y1], ...]
+	var plotter = function(data_raw) {
+		var hist = {};
+		data_raw.forEach(function(el) {
+			var val = (el.length > 1 ? +el[1] : 1);
+			hist[el[0]] = (hist[el[0]] || 0) + val;
+		});
+		var extents = {
+			x: d3.keys(hist),
+			y: [0, d3.max(d3.values(hist))],
+		};
+		var scale = {
+			x: d3.scaleBand().rangeRound([0, width]).padding(0.1).domain(extents.x),
+			y: d3.scaleLinear().rangeRound([height, 0]).domain(extents.y),
+		};
+		updateAxes(scale);
+		var h = frame.selectAll(".bar").data(d3.entries(hist));
+		h.exit().remove();
+		h.enter().append("rect")
+				.attr("class", "bar")
+			.merge(h)
+				.attr("x", function(d){return scale.x(d.key);})
+				.attr("y", function(d){return scale.y(d.value);})
+				.attr("width", scale.x.bandwidth())
+				.attr("height", function(d){return height - scale.y(d.value);});
+	};
+	return plotter;
+};
+
 $(function() {
-	var plotter = lineChart();
+	var plotter = histChart();
 	setupWS(plotter);
 });
 
